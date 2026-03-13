@@ -8,3 +8,4 @@ node_modules/
 .vercel
 
 # Keep the populated database for deployment!
+.env*.local
