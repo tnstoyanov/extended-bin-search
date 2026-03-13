@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const usePostgres = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL?.includes('postgres');
 let db = null;
 let postgres = null;
+let dbReady = false;
 
 // Initialize database
 if (usePostgres) {
@@ -67,15 +68,18 @@ if (usePostgres) {
         db.get('SELECT COUNT(*) as count FROM bins', (err, row) => {
           if (err) {
             console.warn('bins table not found. Run: npm run init-db');
+            dbReady = false;
           } else {
             const recordCount = row?.count || 0;
             console.log(`✓ Database loaded with ${recordCount.toLocaleString()} BIN records`);
+            dbReady = true;
           }
         });
       }
     });
   }).catch(err => {
     console.error('Failed to initialize database:', err);
+    dbReady = false;
   });
 }
 
@@ -116,7 +120,7 @@ app.post('/api/search', async (req, res) => {
       matches = result.rows || [];
     } else {
       // Query SQLite
-      if (!db) {
+      if (!db || !dbReady) {
         return res.status(503).json({ error: 'Database not ready' });
       }
 
@@ -152,12 +156,15 @@ app.get('/api/health', async (req, res) => {
       res.json({
         status: 'ok',
         database: 'postgres',
+        ready: true,
         recordCount: recordCount
       });
     } else {
+      const ready = dbReady && db !== null;
       res.json({
-        status: 'ok',
+        status: ready ? 'ok' : 'loading',
         database: 'sqlite',
+        ready: ready,
         recordCount: 'check logs'
       });
     }
