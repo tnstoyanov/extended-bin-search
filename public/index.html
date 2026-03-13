@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIN Search</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>BIN Search</h1>
+      <p class="subtitle">Look up Bank Identification Numbers</p>
+
+      <div class="search-section">
+        <div class="input-group">
+          <label for="binInput">Enter BIN (6-11 digits):</label>
+          <input 
+            type="text" 
+            id="binInput" 
+            placeholder="e.g., 123456 or 12345678901"
+            maxlength="11"
+          >
+        </div>
+
+        <button id="searchBtn" class="search-btn">Search</button>
+      </div>
+
+      <div id="results" class="results-section"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
