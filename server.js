@@ -37,28 +37,46 @@ if (usePostgres) {
       // Check if compressed database exists
       if (fs.existsSync(compressedDbPath)) {
         console.log('⏳ Decompressing database from', compressedDbPath, '...');
+        console.log('⏳ (This may take a minute on Vercel serverless)');
+        
         const gunzip = createGunzip();
         const source = fs.createReadStream(compressedDbPath);
         const dest = fs.createWriteStream(dbPath);
         
+        let decompressTimeout;
+        
+        const startDecompress = () => {
+          // Set a longer timeout for decompression
+          decompressTimeout = setTimeout(() => {
+            source.destroy();
+            console.error('✗ Decompression timeout - database is taking too long');
+            reject(new Error('Decompression timeout'));
+          }, 60000); // 60 second timeout
+        };
+        
+        source.on('readable', startDecompress);
         source.pipe(gunzip).pipe(dest);
         
         dest.on('finish', () => {
+          clearTimeout(decompressTimeout);
           console.log('✓ Database decompressed successfully to', dbPath);
           resolve();
         });
         
         dest.on('error', (err) => {
+          clearTimeout(decompressTimeout);
           console.error('✗ Decompression write error:', err);
           reject(err);
         });
 
         source.on('error', (err) => {
+          clearTimeout(decompressTimeout);
           console.error('✗ Decompression read error:', err);
           reject(err);
         });
 
         gunzip.on('error', (err) => {
+          clearTimeout(decompressTimeout);
           console.error('✗ Gunzip error:', err);
           reject(err);
         });
@@ -67,9 +85,13 @@ if (usePostgres) {
         console.error('  Available files:');
         try {
           const dataFiles = fs.readdirSync(path.join(__dirname, 'data'));
-          dataFiles.forEach(f => console.error('    -', f));
+          dataFiles.forEach(f => {
+            const fPath = path.join(__dirname, 'data', f);
+            const stats = fs.statSync(fPath);
+            console.error(`    - ${f} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+          });
         } catch (e) {
-          console.error('    Could not list data directory');
+          console.error('    Could not list data directory:', e.message);
         }
         reject(new Error('Database file not found'));
       }
