@@ -29,70 +29,36 @@ if (usePostgres) {
     return new Promise((resolve, reject) => {
       // Check if uncompressed database exists
       if (fs.existsSync(dbPath)) {
-        console.log('✓ Database file found at', dbPath);
+        console.log('✓ Database file found:', dbPath);
         resolve();
         return;
       }
 
       // Check if compressed database exists
       if (fs.existsSync(compressedDbPath)) {
-        console.log('⏳ Decompressing database from', compressedDbPath, '...');
-        console.log('⏳ (This may take a minute on Vercel serverless)');
+        console.log('⏳ Decompressing database...');
         
-        const gunzip = createGunzip();
-        const source = fs.createReadStream(compressedDbPath);
-        const dest = fs.createWriteStream(dbPath);
-        
-        let decompressTimeout;
-        
-        const startDecompress = () => {
-          // Set a longer timeout for decompression
-          decompressTimeout = setTimeout(() => {
-            source.destroy();
-            console.error('✗ Decompression timeout - database is taking too long');
-            reject(new Error('Decompression timeout'));
-          }, 60000); // 60 second timeout
-        };
-        
-        source.on('readable', startDecompress);
-        source.pipe(gunzip).pipe(dest);
-        
-        dest.on('finish', () => {
-          clearTimeout(decompressTimeout);
-          console.log('✓ Database decompressed successfully to', dbPath);
-          resolve();
-        });
-        
-        dest.on('error', (err) => {
-          clearTimeout(decompressTimeout);
-          console.error('✗ Decompression write error:', err);
-          reject(err);
-        });
-
-        source.on('error', (err) => {
-          clearTimeout(decompressTimeout);
-          console.error('✗ Decompression read error:', err);
-          reject(err);
-        });
-
-        gunzip.on('error', (err) => {
-          clearTimeout(decompressTimeout);
-          console.error('✗ Gunzip error:', err);
-          reject(err);
-        });
-      } else {
-        console.error('✗ Database file not found at either:', dbPath, 'or', compressedDbPath);
-        console.error('  Available files:');
         try {
-          const dataFiles = fs.readdirSync(path.join(__dirname, 'data'));
-          dataFiles.forEach(f => {
-            const fPath = path.join(__dirname, 'data', f);
-            const stats = fs.statSync(fPath);
-            console.error(`    - ${f} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-          });
-        } catch (e) {
-          console.error('    Could not list data directory:', e.message);
+          const { gunzipSync } = require('zlib');
+          // Read compressed file
+          const buffer = fs.readFileSync(compressedDbPath);
+          console.log('✓ Read compressed:', (buffer.length / 1024 / 1024).toFixed(2), 'MB');
+          
+          // Decompress synchronously
+          const decompressed = gunzipSync(buffer);
+          console.log('✓ Decompressed to:', (decompressed.length / 1024 / 1024).toFixed(2), 'MB');
+          
+          // Write decompressed file
+          fs.writeFileSync(dbPath, decompressed);
+          console.log('✓ Database ready');
+          
+          resolve();
+        } catch (err) {
+          console.error('✗ Decompression failed:', err.message);
+          reject(err);
         }
+      } else {
+        console.error('✗ Database file not found');
         reject(new Error('Database file not found'));
       }
     });
