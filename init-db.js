@@ -8,6 +8,7 @@ const csvPath = path.join(__dirname, 'data', 'bins_all.csv');
 
 console.log('Starting database import...');
 
+// Remove existing database if it exists
 if (fs.existsSync(dbPath)) {
   fs.unlinkSync(dbPath);
   console.log('Removed existing database');
@@ -44,82 +45,155 @@ db.serialize(() => {
       process.exit(1);
     }
     console.log('Created bins table');
+    startImport();
   });
+  
+  function startImport() {
+    let stmt = null;
+    let insertCount = 0;
+    let lineCount = 0;
+    let batchCount = 0;
+    const batchSize = 50000;
+    let currentBatch = [];
+    let inTransaction = false;
 
-  let stmt;
-  let insertCount = 0;
-  let lineCount = 0;
-  let batchCount = 0;
-  let commitHandled = false;
-  const batchSize = 50000;
-
-  const rl = readline.createInterface({
-    input: fs.createReadStream(csvPath)
-  });
-
-  const insertRow = (cols) => {
-    if (!stmt) {
-      stmt = db.prepare(
-        `INSERT INTO bins (bin, card_brand, issuer, card_type, card_level, 
-                          country_name, country_code_a2, country_code_a3, country_code_numeric,
-                          bank_website, bank_phone, pan_length, personal_commercial, regulated) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
-    }
-    
-    stmt.run(
-      cols[0] || null,      // bin
-      cols[1] || null,      // card_brand
-      cols[2] || null,      // issuer
-      cols[3] || null,      // card_type
-      cols[4] || null,      // card_level
-      cols[5] || null,      // country_name
-      cols[6] || null,      // country_code_a2
-      cols[7] || null,      // country_code_a3
-      cols[8] || null,      // country_code_numeric
-      cols[9] || null,      // bank_website
-      cols[10] || null,     // bank_phone
-      cols[11] || null,     // pan_length
-      cols[12] || null,     // personal_commercial
-      cols[13] || null      // regulated
-    );
-    insertCount++;
-    batchCount++;
-  };
-
-  rl.on('line', (line) => {
-    lineCount++;
-
-    if (lineCount % 100000 === 0) {
-      console.log(`Read ${lineCount} lines, inserted ${insertCount}...`);
-    }
-
-    const cols = line.split(';').map(c => c.trim());
-    if (cols[0]) {
-      insertRow(cols);
-    }
-  });
-
-  rl.on('close', () => {
-    if (stmt) stmt.finalize();
-    
-    console.log(`Processed ${lineCount} lines`);
-    console.log(`Inserted ${insertCount} records`);
-    
-    db.close((err) => {
-      if (err) {
-        console.error('Close error:', err);
-        process.exit(1);
-      }
-      console.log('Database ready!');
-      process.exit(0);
+    const rl = readline.createInterface({
+      input: fs.createReadStream(csvPath)
     });
-  });
 
-  rl.on('error', (err) => {
-    console.error('Read error:', err);
-    if (stmt) stmt.finalize();
-    db.close();
-    process.exit(1);
-  });
+    rl.on('line', (line) => {
+      lineCount++;
+
+      if (lineCount % 100000 === 0) {
+        console.log(`Read ${lineCount} lines, inserted ${insertCount}...`);
+      }
+
+      const cols = line.split(';').map(c => c.trim());
+      if (cols[0]) {
+        currentBatch.push(cols);
+        batchCount++;
+        
+        if (batchCount >= batchSize) {
+          // Process batch
+          if (!inTransaction) {
+            db.run('BEGIN TRANSACTION', (err) => {
+              if (err) console.error('BEGIN error:', err);
+            });
+            inTransaction = true;
+          }
+          
+          processBatch(currentBatch, insertCount, () => {
+            insertCount += currentBatch.length;
+            currentBatch = [];
+            batchCount = 0;
+            
+            // Commit after batch
+            db.run('COMMIT', (err) => {
+              if (err) console.error('COMMIT error:', err);
+              inTransaction = false;
+            });
+          });
+        }
+      }
+    });
+
+    rl.on('close', () => {
+      // Process remaining batch
+      if (currentBatch.length > 0) {
+        if (!inTransaction) {
+          db.run('BEGIN TRANSACTION', (err) => {
+            if (err) console.error('BEGIN error:', err);
+          });
+        }
+        processBatch(currentBatch, insertCount, () => {
+          insertCount += currentBatch.length;
+          
+          db.run('COMMIT', (err) => {
+            if (err) console.error('COMMIT error:', err);
+            
+            console.log(`Processed ${lineCount} lines`);
+            console.log(`Inserted ${insertCount} records`);
+            
+            // Create index
+            db.run('CREATE INDEX idx_bins_prefix ON bins (bin)', (err) => {
+              if (err) {
+                console.error('Index creation error:', err);
+                process.exit(1);
+              }
+              console.log('Created index on bin column');
+              
+              db.close((err) => {
+                if (err) {
+                  console.error('Close error:', err);
+                  process.exit(1);
+                }
+                console.log('Database ready!');
+                process.exit(0);
+              });
+            });
+          });
+        });
+      }
+    });
+
+    rl.on('error', (err) => {
+      console.error('Read error:', err);
+      db.close();
+      process.exit(1);
+    });
+
+    function processBatch(batch, currentInserts, callback) {
+      if (!stmt) {
+        stmt = db.prepare(
+          `INSERT INTO bins (bin, card_brand, issuer, card_type, card_level, 
+                            country_name, country_code_a2, country_code_a3, country_code_numeric,
+                            bank_website, bank_phone, pan_length, personal_commercial, regulated) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+      }
+
+      let processed = 0;
+      const processNext = () => {
+        if (processed >= batch.length) {
+          if (stmt) {
+            stmt.finalize(() => {
+              stmt = null;
+              callback();
+            });
+          } else {
+            callback();
+          }
+          return;
+        }
+
+        const cols = batch[processed];
+        stmt.run(
+          cols[0] || null,
+          cols[1] || null,
+          cols[2] || null,
+          cols[3] || null,
+          cols[4] || null,
+          cols[5] || null,
+          cols[6] || null,
+          cols[7] || null,
+          cols[8] || null,
+          cols[9] || null,
+          cols[10] || null,
+          cols[11] || null,
+          cols[12] || null,
+          cols[13] || null,
+          (err) => {
+            if (err) {
+              console.error('Insert error:', err, 'for BIN:', cols[0]);
+              // Continue anyway
+            }
+            processed++;
+            processNext();
+          }
+        );
+      };
+
+      processNext();
+    }
+  }
 });

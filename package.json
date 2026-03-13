@@ -6,15 +6,14 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "init-db": "node init-db-postgres.js"
+    "init-db": "node init-db.js"
   },
   "keywords": ["bin", "lookup", "search"],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "csv-parser": "^3.0.0",
-    "pg": "^8.11.3",
-    "dotenv": "^16.3.1"
+    "sqlite3": "^5.1.6",
+    "csv-parser": "^3.0.0"
   }
 }

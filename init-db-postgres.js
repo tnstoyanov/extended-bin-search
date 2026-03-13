@@ -1,4 +1,4 @@
-const { Pool, Client } = require('pg');
+const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -6,20 +6,48 @@ require('dotenv').config();
 
 const csvPath = path.join(__dirname, 'data', 'bins_all.csv');
 
-// PostgreSQL connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
-
 console.log('Starting database import from CSV...');
 console.log(`Using database: ${process.env.DATABASE_URL}`);
 
 async function initializeDatabase() {
-  const client = await pool.connect();
+  let client = null;
   
   try {
-    // Drop existing table if it exists
+    // Connect with retry logic - create fresh client for each attempt
+    console.log('Connecting to database...');
+    let connected = false;
+    
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        // Create a new client instance for this attempt - using simple config that works
+        client = new Client(process.env.DATABASE_URL);
+        
+        console.log(`Connection attempt ${attempt}...`);
+        await client.connect();
+        connected = true;
+        console.log('Connected successfully');
+        break;
+      } catch (err) {
+        console.log(`Connection attempt ${attempt} failed:`, err.message);
+        if (client) {
+          try {
+            await client.end();
+          } catch (e) {}
+          client = null;
+        }
+        if (attempt < 5) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff
+          console.log(`Waiting ${delay}ms before retry...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    
+    if (!connected || !client) {
+      throw new Error('Failed to connect after 5 attempts');
+    }
+
+    // Drop existing table
     console.log('Preparing database...');
     await client.query('DROP TABLE IF EXISTS bins CASCADE');
     
@@ -44,49 +72,76 @@ async function initializeDatabase() {
       )
     `);
     
-    // Create index on bin column for faster searches
+    // Create index
     await client.query('CREATE INDEX idx_bins_prefix ON bins (bin)');
     
     console.log('Created bins table with indexes');
 
-    // Read CSV and insert with batch processing
+    // Read CSV and insert
     let insertCount = 0;
     let lineCount = 0;
-    const batchSize = 1000;
-    let batch = [];
+    let batchCount = 0;
+    const batchSize = 10;  // Very small batch for Neon free tier
 
     const rl = readline.createInterface({
       input: fs.createReadStream(csvPath)
     });
 
-    const flushBatch = async () => {
+    let batch = [];
+    let transactionActive = false;
+
+    const processBatch = async () => {
       if (batch.length === 0) return;
-
+      
       try {
-        // Build multi-row INSERT statement
-        const values = batch.map((cols, idx) => {
-          const offset = idx * 14;
-          return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14})`;
-        }).join(',');
-
-        const flatValues = batch.flat();
-
-        const query = `
-          INSERT INTO bins (bin, card_brand, issuer, card_type, card_level, country_name, country_code_a2, country_code_a3, country_code_numeric, bank_website, bank_phone, pan_length, personal_commercial, regulated)
-          VALUES ${values}
-        `;
-
-        await client.query(query, flatValues);
-        insertCount += batch.length;
+        // Start transaction for this batch
+        if (!transactionActive) {
+          await client.query('BEGIN');
+          transactionActive = true;
+        }
+        
+        for (const cols of batch) {
+          await client.query(
+            `INSERT INTO bins (bin, card_brand, issuer, card_type, card_level, country_name, country_code_a2, country_code_a3, country_code_numeric, bank_website, bank_phone, pan_length, personal_commercial, regulated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+            [
+              cols[0] || null,
+              cols[1] || null,
+              cols[2] || null,
+              cols[3] || null,
+              cols[4] || null,
+              cols[5] || null,
+              cols[6] || null,
+              cols[7] || null,
+              cols[8] || null,
+              cols[9] || null,
+              cols[10] || null,
+              cols[11] || null,
+              cols[12] || null,
+              cols[13] || null
+            ]
+          );
+          insertCount++;
+        }
+        
+        // Commit batch
+        await client.query('COMMIT');
+        transactionActive = false;
         batch = [];
       } catch (err) {
-        console.error('Batch insert error:', err.message);
+        if (transactionActive) {
+          try {
+            await client.query('ROLLBACK');
+          } catch (e) {}
+          transactionActive = false;
+        }
+        console.error('Batch error:', err.message);
         throw err;
       }
     };
 
     return new Promise((resolve, reject) => {
-      rl.on('line', (line) => {
+      rl.on('line', async (line) => {
         lineCount++;
 
         if (lineCount % 100000 === 0) {
@@ -95,40 +150,38 @@ async function initializeDatabase() {
 
         const cols = line.split(';').map(c => c.trim());
         if (cols[0]) {
-          batch.push([
-            cols[0] || null,      // bin
-            cols[1] || null,      // card_brand
-            cols[2] || null,      // issuer
-            cols[3] || null,      // card_type
-            cols[4] || null,      // card_level
-            cols[5] || null,      // country_name
-            cols[6] || null,      // country_code_a2
-            cols[7] || null,      // country_code_a3
-            cols[8] || null,      // country_code_numeric
-            cols[9] || null,      // bank_website
-            cols[10] || null,     // bank_phone
-            cols[11] || null,     // pan_length
-            cols[12] || null,     // personal_commercial
-            cols[13] || null      // regulated
-          ]);
-
-          if (batch.length >= batchSize) {
+          batch.push(cols);
+          batchCount++;
+          
+          if (batchCount >= batchSize) {
             rl.pause();
-            flushBatch().then(() => rl.resume()).catch(reject);
+            processBatch()
+              .then(() => {
+                batchCount = 0;
+                rl.resume();
+              })
+              .catch(reject);
           }
         }
       });
 
       rl.on('close', async () => {
         try {
-          // Flush remaining batch
-          await flushBatch();
+          // Process remaining batch
+          if (batch.length > 0) {
+            await processBatch();
+          }
           
           console.log(`Processed ${lineCount} lines`);
           console.log(`Inserted ${insertCount} records`);
 
-          client.release();
-          await pool.end();
+          // Cleanup
+          if (transactionActive) {
+            try {
+              await client.query('ROLLBACK');
+            } catch (e) {}
+          }
+          await client.end();
           
           console.log('Database initialization complete!');
           process.exit(0);
@@ -145,8 +198,11 @@ async function initializeDatabase() {
     });
   } catch (err) {
     console.error('Initialization error:', err);
-    client.release();
-    await pool.end();
+    if (client) {
+      try {
+        await client.end();
+      } catch (e) {}
+    }
     process.exit(1);
   }
 }
