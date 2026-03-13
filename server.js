@@ -29,13 +29,14 @@ if (usePostgres) {
     return new Promise((resolve, reject) => {
       // Check if uncompressed database exists
       if (fs.existsSync(dbPath)) {
+        console.log('✓ Database file found at', dbPath);
         resolve();
         return;
       }
 
       // Check if compressed database exists
       if (fs.existsSync(compressedDbPath)) {
-        console.log('Decompressing database...');
+        console.log('⏳ Decompressing database from', compressedDbPath, '...');
         const gunzip = createGunzip();
         const source = fs.createReadStream(compressedDbPath);
         const dest = fs.createWriteStream(dbPath);
@@ -43,31 +44,52 @@ if (usePostgres) {
         source.pipe(gunzip).pipe(dest);
         
         dest.on('finish', () => {
-          console.log('Database decompressed successfully');
+          console.log('✓ Database decompressed successfully to', dbPath);
           resolve();
         });
         
         dest.on('error', (err) => {
-          console.error('Decompression error:', err);
+          console.error('✗ Decompression write error:', err);
+          reject(err);
+        });
+
+        source.on('error', (err) => {
+          console.error('✗ Decompression read error:', err);
+          reject(err);
+        });
+
+        gunzip.on('error', (err) => {
+          console.error('✗ Gunzip error:', err);
           reject(err);
         });
       } else {
+        console.error('✗ Database file not found at either:', dbPath, 'or', compressedDbPath);
+        console.error('  Available files:');
+        try {
+          const dataFiles = fs.readdirSync(path.join(__dirname, 'data'));
+          dataFiles.forEach(f => console.error('    -', f));
+        } catch (e) {
+          console.error('    Could not list data directory');
+        }
         reject(new Error('Database file not found'));
       }
     });
   }
 
   // Initialize SQLite
+  console.log('Initializing SQLite...');
   ensureDatabase().then(() => {
+    console.log('Opening SQLite database file...');
     db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
-        console.error('Error connecting to database:', err.message);
-        console.error('Database path:', dbPath);
+        console.error('✗ Error connecting to database:', err.message);
+        console.error('  Database path:', dbPath);
       } else {
+        console.log('✓ SQLite connection established');
         // Check database and get record count
         db.get('SELECT COUNT(*) as count FROM bins', (err, row) => {
           if (err) {
-            console.warn('bins table not found. Run: npm run init-db');
+            console.warn('✗ bins table not found:', err.message);
             dbReady = false;
           } else {
             const recordCount = row?.count || 0;
@@ -78,7 +100,7 @@ if (usePostgres) {
       }
     });
   }).catch(err => {
-    console.error('Failed to initialize database:', err);
+    console.error('✗ Failed to initialize database:', err.message);
     dbReady = false;
   });
 }
