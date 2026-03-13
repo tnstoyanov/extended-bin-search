@@ -1,0 +1,7 @@
+data/bins.db
+data/bins.db-shm
+data/bins.db-wal
+data/bins_all.csv
+*.log
+.env.local
+.env
