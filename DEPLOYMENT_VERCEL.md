@@ -1,26 +1,34 @@
 # Vercel Deployment Guide
 
-Complete step-by-step guide to deploy this BIN Search app to Vercel with Vercel Postgres.
+Complete step-by-step guide to deploy this BIN Search app to Vercel with Neon PostgreSQL.
 
 ## Prerequisites
 
 - GitHub account with the repository pushed
 - Vercel account (free tier works)
+- Neon account (free tier available at [neon.tech](https://neon.tech))
 - The `bins_all.csv` file available locally
 
-## Step 1: Set Up Vercel Postgres Database
+## Step 1: Set Up Neon PostgreSQL Database
 
-1. Log in to [Vercel Dashboard](https://vercel.com/dashboard)
-2. Go to **Storage** tab → **Create** → **Postgres**
-3. Select region (choose closest to your users)
-4. Name: `bindb` (or your preference)
-5. Click **Create**
-6. Copy the connection string from **Quickstart** tab
+1. Go to [neon.tech](https://neon.tech) and sign up (free tier available)
+2. Click **Create Project** or **+ New Project**
+3. Configure project:
+   - **Name:** `bindb` (or your preference)
+   - **Database name:** `bindb`
+   - **Region:** Choose closest to you
+   - **PostgreSQL version:** 15 (or latest)
+4. Click **Create Project**
+5. You'll be on the **Dashboard**. Copy your connection string:
+   - Click **Connection** dropdown → **Connection string**
+   - Copy the `postgresql://` URL
 
 The connection string looks like:
 ```
-postgresql://[user]:[password]@[host]/[database]
+postgresql://[user]:[password]@[host]/[database]?sslmode=require
 ```
+
+**Save this URL** - you'll need it next
 
 ## Step 2: Deploy App to Vercel
 
@@ -58,10 +66,10 @@ After deployment completes:
 2. Click **Settings** → **Environment Variables**
 3. Add new variable:
    - Name: `DATABASE_URL`
-   - Value: [Your Postgres connection string from Step 1]
+   - Value: [Your Neon PostgreSQL connection string from Step 1]
    - Environments: **Production**
 4. Click **Save**
-5. Go to **Deployments** and redeploy the latest commit
+5. Go to **Deployments** and redeploy the latest commit to apply the env var
 
 ## Step 4: Initialize Database
 
@@ -71,7 +79,7 @@ The database exists but is empty. Initialize it with BIN data:
 
 ```bash
 # Pull environment variables locally
-vercel env pull
+vercel env pull --yes
 
 # Run initialization
 npm run init-db
@@ -80,12 +88,12 @@ npm run init-db
 ### Option B: Using Connection String Directly
 
 ```bash
-# Replace with your actual Vercel Postgres URL
-export DATABASE_URL="postgresql://[user]:[password]@[host]/[database]"
+# Replace with your actual Neon PostgreSQL URL
+export DATABASE_URL="postgresql://[user]:[password]@[host]/[database]?sslmode=require"
 npm run init-db
 ```
 
-The import will take 5-15 minutes depending on server performance.
+The import will take 5-15 minutes depending on connection speed.
 
 ### Monitor Progress
 
@@ -128,8 +136,8 @@ curl -X POST https://your-app.vercel.app/api/search \
 To reimport BINs after updating `bins_all.csv`:
 
 ```bash
-# Set your DATABASE_URL
-export DATABASE_URL="your-vercel-postgres-url"
+# Set your DATABASE_URL from Neon
+export DATABASE_URL="postgresql://[user]:[password]@[host]/[database]?sslmode=require"
 
 # Rerun import (drops and recreates table)
 npm run init-db
@@ -143,13 +151,16 @@ npm run init-db
 psql $DATABASE_URL -c "SELECT pg_size_pretty(pg_database_size('bindb'));"
 ```
 
-### View Recent Queries
+### View Database Dashboard
 
-In Vercel Dashboard → **Storage** → Your Postgres database → **Monitoring** tab
+1. Go to [neon.tech](https://neon.tech)
+2. Select your project
+3. Click **Monitoring** to see usage stats, connection count, and query logs
+4. Click **Browse Branches** to see database contents via web dashboard
 
-### Check Function Logs
+### Check App Logs
 
-In Vercel Dashboard → **Functions** → View logs for API errors
+In Vercel Dashboard → **Functions** → View logs for any API errors
 
 ## Troubleshooting
 
@@ -157,26 +168,20 @@ In Vercel Dashboard → **Functions** → View logs for API errors
 
 Make sure you added the environment variable and redeployed:
 1. Settings → Environment Variables → Check DATABASE_URL exists
-2. Deployments → Click latest deployment → Redeploy
+2. Deployments → Click latest deployment → Click **Redeploy**
 
-### "connection timeout" during init-db
+### "connection timeout" or "SSL error" during init-db
 
-Your CSV file is large (326MB). May take several attempts:
+The CSV import is large (326MB). Solutions:
 ```bash
 # Retry initialization
 npm run init-db
+
+# If persistently failing, check your Neon connection:
+psql $DATABASE_URL -c "SELECT 1;"
 ```
 
-If it keeps failing:
-- Try from a machine with better internet
-- Contact Vercel support if persistent
-
-### "Function timed out"
-
-The import script runs locally and creates a persistent database, not a Vercel Function, so timeouts shouldn't occur. If you see errors:
-1. Check DATABASE_URL is correct
-2. Verify PostgreSQL instance is accepting connections
-3. Try running from a different network
+If you see SSL errors, ensure your connection string includes `?sslmode=require`
 
 ### Searches returning no results
 
@@ -187,27 +192,37 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM bins;"
 
 Should return ~3.3M records. If 0, rerun `npm run init-db`
 
+### "relation "bins" does not exist"
+
+The table wasn't created. Rerun initialization:
+```bash
+npm run init-db
+```
+
 ## Performance Tips
 
-1. **Use Vercel Postgres:** It's in the same region as your functions = fast
+1. **Use Neon:** It's a managed PostgreSQL service optimized for serverless
 2. **Index queries:** The app automatically uses the `idx_bins_prefix` index
 3. **Connection pooling:** Already configured in `server.js`
-4. **Regional deployment:** Choose database region closest to your users
+4. **SSL/TLS:** Always used for secure connections
 
 ## Costs
 
 - **Vercel:** Free tier includes generous serverless function usage
-- **Postgres:** Free tier includes 7 days of storage + $1/month per 1GB thereafter
-- **This app:** ~341MB database ≈ $1/month on Vercel Postgres
+- **Neon:** Free tier provides 0.5GB storage + 100 projects
+- **This app:** ~341MB database ≈ $0 on Neon free tier (or ~$0.15/month with paid plan)
+
+**Estimate:** Completely free on Neon free tier!
 
 ## Next Steps
 
-- Monitor performance in Vercel Dashboard
-- Set up alerting for errors
-- Consider adding analytics
+- Monitor performance in Vercel Dashboard and Neon Dashboard
+- Set up alerting for errors (optional)
 - Plan for data updates
+- Consider scaling to paid tiers if usage grows
 
-## Support
+## Support & Docs
 
-For Vercel-specific issues: [Vercel Docs](https://vercel.com/docs)
-For Postgres issues: [Vercel Postgres Docs](https://vercel.com/docs/storage/vercel-postgres)
+- **Vercel:** [vercel.com/docs](https://vercel.com/docs)
+- **Neon:** [neon.tech/docs](https://neon.tech/docs)
+- **PostgreSQL:** [postgresql.org/docs](https://www.postgresql.org/docs/)

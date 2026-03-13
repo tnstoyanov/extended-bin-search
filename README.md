@@ -15,9 +15,9 @@ A modern, secure web application for searching Bank Identification Numbers (BINs
 ## Tech Stack
 
 - **Backend:** Node.js + Express.js
-- **Database:** PostgreSQL (persistent, scalable)
+- **Database:** PostgreSQL with Neon (persistent, scalable)
 - **Frontend:** HTML5, CSS3, Vanilla JavaScript
-- **Deployment:** Vercel + Vercel Postgres
+- **Deployment:** Vercel + Neon PostgreSQL
 
 ## Project Structure
 
@@ -82,47 +82,35 @@ extended-bin-search/
 
 ## Deployment on Vercel
 
-### Step 1: Create Vercel Postgres Database
+### Step 1: Create Neon PostgreSQL Database
 
-1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
-2. Click **Storage** → **Create Database** → **Select Postgres**
-3. Choose your region and create the database
-4. Copy the connection string
+1. Go to [neon.tech](https://neon.tech) and sign up (free tier available)
+2. Click **Create Project** or **+ New Project**
+3. Configure:
+   - Name: `bindb`
+   - Database: `bindb`
+   - Region: Closest to you
+4. Click **Create Project**
+5. Copy the connection string from **Connection** → **Connection string**
 
-### Step 2: Deploy to Vercel
+### Step 2: Deploy to Vercel and Set Environment Variables
 
-1. **Push to GitHub:**
-   ```bash
-   git add .
-   git commit -m "Ready for Vercel deployment"
-   git push origin main
-   ```
+1. Push to GitHub and deploy via [vercel.com/new](https://vercel.com/new)
+2. After deployment, go to **Settings** → **Environment Variables**
+3. Add `DATABASE_URL` with your Neon connection string
+4. Redeploy
 
-2. **Deploy from GitHub:**
-   - Go to [vercel.com/new](https://vercel.com/new)
-   - Select your GitHub repository
-   - Click **Deploy**
+### Step 3: Initialize Database
 
-3. **Set environment variables:**
-   - Go to your Vercel project settings
-   - Navigate to **Settings** → **Environment Variables**
-   - Add `DATABASE_URL` with your Postgres connection string from Step 1
-   - Redeploy
-
-### Step 3: Initialize Database on Vercel
-
-After deployment, you need to populate the database once:
+Once deployed, populate with BINs:
 
 ```bash
-# Run the init script against your Vercel database
-DATABASE_URL="your-vercel-postgres-url" npm run init-db
-```
-
-Or use the Vercel CLI:
-```bash
-vercel env pull
+# Pull env vars and run init
+vercel env pull --yes
 npm run init-db
 ```
+
+See [DEPLOYMENT_VERCEL.md](./DEPLOYMENT_VERCEL.md) for detailed steps.
 
 ## API Reference
 
