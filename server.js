@@ -201,3 +201,33 @@ app.get('/api/health', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 BIN Search server running at http://localhost:${PORT}`);
 });
+
+// Debug endpoint to check files
+app.get('/api/debug/files', (req, res) => {
+  const dataDir = path.join(__dirname, 'data');
+  try {
+    const files = fs.readdirSync(dataDir);
+    const fileInfo = {};
+    files.forEach(f => {
+      const stats = fs.statSync(path.join(dataDir, f));
+      fileInfo[f] = {
+        size: stats.size,
+        sizeMB: (stats.size / 1024 / 1024).toFixed(2),
+        isDirectory: stats.isDirectory(),
+        isFile: stats.isFile(),
+        mtime: stats.mtime
+      };
+    });
+    res.json({
+      dataDir: dataDir,
+      files: fileInfo,
+      dbReady: dbReady,
+      db: db ? 'connected' : 'not connected'
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message,
+      dataDir: dataDir
+    });
+  }
+});
