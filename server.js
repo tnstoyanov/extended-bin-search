@@ -61,13 +61,9 @@ if (usePostgres) {
           return;
         }
         
-        // Try compressed copy
+        // Try compressed copy with STREAMING (memory efficient)
         if (fs.existsSync(compressedDbPath)) {
-          console.log('✓ Decompressing database from git...');
-          const { gunzipSync } = require('zlib');
-          
-          const buffer = fs.readFileSync(compressedDbPath);
-          const decompressed = gunzipSync(buffer);
+          console.log('✓ Decompressing database (streaming)...');
           
           // Ensure target directory exists
           const dbDir = path.dirname(dbPath);
@@ -75,9 +71,31 @@ if (usePostgres) {
             fs.mkdirSync(dbDir, { recursive: true });
           }
           
-          fs.writeFileSync(dbPath, decompressed);
-          console.log('✓ Database ready');
-          resolve();
+          const gunzip = createGunzip();
+          const source = fs.createReadStream(compressedDbPath);
+          const dest = fs.createWriteStream(dbPath);
+          
+          source.pipe(gunzip).pipe(dest);
+          
+          dest.on('finish', () => {
+            console.log('✓ Database decompressed and ready');
+            resolve();
+          });
+          
+          dest.on('error', (err) => {
+            console.error('✗ Write error:', err.message);
+            reject(err);
+          });
+          
+          source.on('error', (err) => {
+            console.error('✗ Read error:', err.message);
+            reject(err);
+          });
+          
+          gunzip.on('error', (err) => {
+            console.error('✗ Gunzip error:', err.message);
+            reject(err);
+          });
           return;
         }
         
