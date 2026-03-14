@@ -19,47 +19,75 @@ if (usePostgres) {
   postgres = sql;
   console.log('✓ Using Vercel Postgres');
 } else {
-  // Use SQLite for local development
+  // Use SQLite for local development or Render persistent disk
   const sqlite3 = require('sqlite3').verbose();
-  const dbPath = path.join(__dirname, 'data', 'bins.db');
+  
+  // Support DATABASE_PATH env variable (for Render persistent disk)
+  // Falls back to local data/bins.db for development
+  const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'bins.db');
   const compressedDbPath = path.join(__dirname, 'data', 'bins.db.gz');
+  const localDbPath = path.join(__dirname, 'data', 'bins.db');
+  
+  console.log('Database path:', dbPath);
 
   // Decompress database if needed
   function ensureDatabase() {
     return new Promise((resolve, reject) => {
-      // Check if uncompressed database exists
+      // Check if uncompressed database exists at target location
       if (fs.existsSync(dbPath)) {
-        console.log('✓ Database file found:', dbPath);
+        console.log('✓ Database found:', dbPath);
         resolve();
         return;
       }
 
-      // Check if compressed database exists
-      if (fs.existsSync(compressedDbPath)) {
-        console.log('⏳ Decompressing database...');
+      // Try to copy/decompress from git repo
+      console.log('⏳ Initializing database from git...');
+      
+      try {
+        // First, try to use uncompressed local copy
+        if (fs.existsSync(localDbPath)) {
+          console.log('✓ Copying database from local to persistent storage...');
+          const data = fs.readFileSync(localDbPath);
+          
+          // Ensure target directory exists
+          const dbDir = path.dirname(dbPath);
+          if (!fs.existsSync(dbDir)) {
+            fs.mkdirSync(dbDir, { recursive: true });
+          }
+          
+          fs.writeFileSync(dbPath, data);
+          console.log('✓ Database copied successfully');
+          resolve();
+          return;
+        }
         
-        try {
+        // Try compressed copy
+        if (fs.existsSync(compressedDbPath)) {
+          console.log('✓ Decompressing database from git...');
           const { gunzipSync } = require('zlib');
-          // Read compressed file
+          
           const buffer = fs.readFileSync(compressedDbPath);
-          console.log('✓ Read compressed:', (buffer.length / 1024 / 1024).toFixed(2), 'MB');
-          
-          // Decompress synchronously
           const decompressed = gunzipSync(buffer);
-          console.log('✓ Decompressed to:', (decompressed.length / 1024 / 1024).toFixed(2), 'MB');
           
-          // Write decompressed file
+          // Ensure target directory exists
+          const dbDir = path.dirname(dbPath);
+          if (!fs.existsSync(dbDir)) {
+            fs.mkdirSync(dbDir, { recursive: true });
+          }
+          
           fs.writeFileSync(dbPath, decompressed);
           console.log('✓ Database ready');
-          
           resolve();
-        } catch (err) {
-          console.error('✗ Decompression failed:', err.message);
-          reject(err);
+          return;
         }
-      } else {
-        console.error('✗ Database file not found');
+        
+        // No database found anywhere
+        console.error('✗ No database file found');
+        console.error('  Looked for:', localDbPath, 'and', compressedDbPath);
         reject(new Error('Database file not found'));
+      } catch (err) {
+        console.error('✗ Database initialization error:', err.message);
+        reject(err);
       }
     });
   }
