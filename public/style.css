@@ -127,6 +127,28 @@ input[type="text"]:focus {
   border-radius: 8px;
   overflow-x: scroll;
   overflow-y: hidden;
+  /* Ensure scrollbar is always visible */
+  scrollbar-width: auto;
+}
+
+/* Custom scrollbar styling for webkit browsers (Chrome, Safari, Edge) */
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+  background-color: #f5f5f5;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background-color: #f5f5f5;
+  border-radius: 5px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background-color: #ccc;
+  border-radius: 5px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: #999;
 }
 
 table {
