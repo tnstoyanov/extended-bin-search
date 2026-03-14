@@ -10,3 +10,4 @@ node_modules/
 # Keep the populated database for deployment!
 .env*.local
 data/bins_all.csv
+data/bins.db
