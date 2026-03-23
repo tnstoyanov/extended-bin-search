@@ -9,7 +9,7 @@ node_modules/
 
 # Keep the populated database for deployment!
 .env*.local
-data/bins_all.csv
+# data/bins_all.csv - now tracked with Git LFS
 data/bins.db
 data/bins.db-shm
 data/bins.db-wal
