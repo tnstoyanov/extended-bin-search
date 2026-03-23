@@ -8,6 +8,15 @@ const csvPath = path.join(__dirname, 'data', 'bins_all.csv');
 console.log('Starting database import...');
 console.log(`DB: ${dbPath}`);
 console.log(`CSV: ${csvPath}`);
+console.log(`CSV exists: ${fs.existsSync(csvPath)}`);
+console.log(`CSV size: ${fs.existsSync(csvPath) ? (fs.statSync(csvPath).size / 1024 / 1024).toFixed(2) + ' MB' : 'N/A'}`);
+
+// Check if CSV exists
+if (!fs.existsSync(csvPath)) {
+  console.error('ERROR: CSV file not found at', csvPath);
+  console.error('Available files in data/:', fs.readdirSync(path.join(__dirname, 'data')));
+  process.exit(1);
+}
 
 // Remove existing database if it exists
 if (fs.existsSync(dbPath)) {
@@ -19,6 +28,8 @@ if (fs.existsSync(dbPath)) {
 fs.readFile(csvPath, 'utf8', (err, data) => {
   if (err) {
     console.error('File read error:', err);
+    console.error('Error code:', err.code);
+    console.error('Error path:', err.path);
     process.exit(1);
   }
 
