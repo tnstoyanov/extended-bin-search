@@ -5,7 +5,7 @@ services:
     plan: free
     
     # Build and start commands
-    buildCommand: npm install
+    buildCommand: npm install && npm run init-db
     startCommand: npm start
     
     # Environment variables
