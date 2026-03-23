@@ -7,9 +7,9 @@ node_modules/
 .vscode/
 .vercel
 
-# Keep the populated database for deployment!
-.env*.local
-# data/bins_all.csv - now tracked with Git LFS
+# Uncompressed database - too large
 data/bins.db
 data/bins.db-shm
 data/bins.db-wal
+# But keep the compressed version for deployment
+!data/bins.db.gz

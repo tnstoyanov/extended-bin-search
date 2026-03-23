@@ -5,7 +5,7 @@ services:
     plan: free
     
     # Build and start commands
-    buildCommand: npm install && (npm run init-db || echo "⚠️ init-db failed, server will start without database")
+    buildCommand: npm install
     startCommand: npm start
     
     # Environment variables
