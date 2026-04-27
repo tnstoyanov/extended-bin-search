@@ -7,7 +7,8 @@ node_modules/
 .vscode/
 .vercel
 
-# Uncompressed database - too large
+# Large files - store only compressed version
+data/bins_all.csv
 data/bins.db
 data/bins.db-shm
 data/bins.db-wal
