@@ -18,6 +18,10 @@ log(`Node Environment: ${process.env.NODE_ENV || 'development'}`);
 log(`Port: ${PORT}`);
 log(`Platform: ${process.platform} ${process.arch}`);
 log(`Working Directory: ${process.cwd()}`);
+log(`__dirname: ${__dirname}`);
+log(`DATABASE_PATH env var: ${process.env.DATABASE_PATH || 'NOT SET'}`);
+log(`RENDER env var: ${process.env.RENDER || 'NOT SET'}`);
+log(`HOME: ${process.env.HOME || 'NOT SET'}`);
 
 // Determine which database to use
 const usePostgres = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL?.includes('postgres');
@@ -47,22 +51,9 @@ if (usePostgres) {
   function ensureDatabase() {
     return new Promise((resolve, reject) => {
       log(`Checking for existing database...`);
-      
-      // Check if uncompressed database exists at target location
-      if (fs.existsSync(dbPath)) {
-        try {
-          const stats = fs.statSync(dbPath);
-          log(`✓ Database found at ${dbPath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`, 'SUCCESS');
-          resolve();
-        } catch (err) {
-          log(`✗ Error reading database file: ${err.message}`, 'ERROR');
-          reject(err);
-        }
-        return;
-      }
-
-      // Try to copy/decompress from git repo
-      log(`⏳ Database not found at target location, initializing from source...`, 'WARN');
+      log(`Primary path: ${dbPath}`, 'INFO');
+      log(`Backup/compressed path: ${compressedDbPath}`, 'INFO');
+      log(`Local fallback path: ${localDbPath}`, 'INFO');
       
       try {
         // First, try to use uncompressed local copy
@@ -134,9 +125,27 @@ if (usePostgres) {
         }
         
         // No database found anywhere
+        const dbDir = path.dirname(dbPath);
         log(`✗ No database file found anywhere`, 'ERROR');
-        log(`  Looked for: ${localDbPath}`, 'ERROR');
-        log(`  And: ${compressedDbPath}`, 'ERROR');
+        log(`  Looked in local repo for: ${localDbPath}`, 'ERROR');
+        log(`  Looked in local repo for compressed: ${compressedDbPath}`, 'ERROR');
+        log(``, 'ERROR');
+        log(`  Target path is: ${dbPath}`, 'ERROR');
+        log(`  Target directory: ${dbDir}`, 'ERROR');
+        
+        // Try to help with diagnostics
+        try {
+          const dirExists = fs.existsSync(dbDir);
+          log(`  Target dir exists: ${dirExists}`, 'ERROR');
+          if (dirExists) {
+            log(`  Files in target dir: ${fs.readdirSync(dbDir).join(', ')}`, 'ERROR');
+          }
+        } catch (e) {
+          log(`  Cannot read target directory: ${e.message}`, 'ERROR');
+        }
+        
+        log(``, 'ERROR');
+        log(`SOLUTION: Make sure bins.db.gz is committed to git and present in data/ directory`, 'INFO');
         reject(new Error('Database file not found'));
       } catch (err) {
         log(`✗ Database initialization error: ${err.message}`, 'ERROR');
